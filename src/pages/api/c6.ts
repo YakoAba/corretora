@@ -10,8 +10,8 @@ type Data = {
 
 type Proposta = {
   "CPF": string,
-  "CONTRATOS": 3,
-  "ATIVO": true,
+  "CONTRATOS": number,
+  "ATIVO": boolean,
   "ITENS": [
     {
       "NUMERO": string,
@@ -44,50 +44,58 @@ export default async function handler(
   const { method } = req
   try {
     const client = await clientPromise
-    const db = client.db(process.env.MONGODB_DB)
-
+    const db = client.db("corretora")
+    let data: {};
+    let status: boolean = false;
     switch (method) {
       case 'POST':
         try {
           const mensagem = req.body.mensagem
-          const limpa = await limpar(mensagem)
-          const fatiadas = await fatiar(limpa)
-          var resultado: { [key: string]: string | number | boolean | Date } = {};
-          var itens: {}[] = []; // Inicializa itens como um array vazio
-          fatiadas.forEach(function (par) {
-            let [chave, valor] = par.split(':');
-            switch (chave) {
-              case "número":
-                resultado[chave] = parseInt(valor)
-                break;
-              case "valor do empréstimo":
-                resultado[chave] = parseFloat(valor.replace("r$", ""))
-                break;
-              case "valor da parcela":
-                resultado[chave] = parseFloat(valor.replace("r$", ""))
-                break;
-              case "quantidade de parcelas":
-                resultado[chave] = parseInt(valor);
-                break;
-              case "status atual":
-                resultado[chave] = (valor === "ativo") ? true : false;
-                break;
-              case "data da primeira parcela":
-                let partesData = valor.split("/");
-                let data = new Date(parseInt(partesData[2]), parseInt(partesData[1]) - 1, parseInt(partesData[0]));
-                resultado[chave] = data;
-                itens.push(resultado);
-                resultado = {};
-                break;
-
-              default:
-
-                break;
-            }
-          });
-          let data = { "CPF": req.body.CPF, "Data": req.body.Data, "itens": itens }
+          if (!mensagem.includes('número')) {
+            status = mensagem.includes("ativo")
+            data = { "CPF": req.body.CPF, "Data": req.body.Data, "Ativo": status, "Contratos": 0, "itens": [] }
+          }
+          else {
+            const limpa = await limpar(mensagem)
+            const fatiadas = await fatiar(limpa)
+            var resultado: { [key: string]: string | number | boolean | Date } = {};
+            var itens: {}[] = []; // Inicializa itens como um array vazio
+            var contratos = 0;
+            fatiadas.forEach(function (par) {
+              let [chave, valor] = par.split(':');
+              switch (chave) {
+                case "número":
+                  resultado[chave] = parseInt(valor)
+                  break;
+                case "valor do empréstimo":
+                  resultado[chave] = parseFloat(valor.replace("r$", ""))
+                  break;
+                case "valor da parcela":
+                  resultado[chave] = parseFloat(valor.replace("r$", ""))
+                  break;
+                case "quantidade de parcelas":
+                  resultado[chave] = parseInt(valor);
+                  break;
+                case "status atual":
+                  resultado[chave] = (valor === "ativo") ? true : false;
+                  if (resultado[chave]) status = resultado[chave] as boolean;
+                  break;
+                case "data da primeira parcela":
+                  let partesData = valor.split("/");
+                  let data = new Date(parseInt(partesData[2]), parseInt(partesData[1]) - 1, parseInt(partesData[0]));
+                  resultado[chave] = data;
+                  itens.push(resultado);
+                  resultado = {};
+                  contratos = contratos = + 1;
+                  break;
+                default:
+                  break;
+              }
+            });
+            data = { "CPF": req.body.CPF, "Data": req.body.Data, "Contratos": contratos, "Ativo": status, "itens": itens }
+          }
+          await db.collection("contratos").insertOne(data)
           console.log(data)
-          await db.collection("contratos").insertMany(req.body)
           res.status(201).json({ sucesso: true })
         } catch (error) {
           res.status(400).json({ sucesso: false })
